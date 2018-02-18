@@ -2,31 +2,19 @@ require "spec_helper"
 
 RSpec.describe Chimparse do
   context "Local implementation" do
-    let(:content) { Chimparse::Filler.run(html_content, text_vars, html_vars) }
+    let(:content) { Chimparse.run(html_content, vars) }
 
     context "text variables" do
       let(:html_content) { "<h2>*|THE_VAR|*</h2>" }
-      let(:text_vars) { { THE_VAR: "Hello!" } }
-      let(:html_vars) { {} }
+      let(:vars) { { THE_VAR: "Hello!" } }
 
       it "replaces the variable" do
         expect(content).to eq("<h2>Hello!</h2>")
       end
     end
 
-    context "HTML variables" do
-      let(:html_content) { "<h2>*|HTML:THE_VAR|*</h2>" }
-      let(:text_vars) { {} }
-      let(:html_vars) { { THE_VAR: "<a>A link</a>" } }
-
-      it "replaces an HTML variable" do
-        expect(content).to eq("<h2><a>A link</a></h2>")
-      end
-    end
-
     context "conditionals" do
-      let(:text_vars) { { THIS_IS_TRUE: true } }
-      let(:html_vars) { {} }
+      let(:vars) { { THIS_IS_TRUE: true } }
 
       context "IF TRUE -- ENDIF" do
         let(:html_content) {

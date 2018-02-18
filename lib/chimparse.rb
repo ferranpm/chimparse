@@ -1,60 +1,61 @@
-require "attr_extras"
 require "chimparse/version"
-require "cgi"
+require "strscan"
 
 module Chimparse
-  class Filler
-    static_facade :run, :string, :text_vars, :html_vars
+  class << self
+    def run(string, variables)
+      ast = Parser.run(string)
+      Filler.run(ast, variables)
+    end
+  end
 
-    def run
-      @content = string.dup
-      text_vars.each do |key, value|
-        @content.gsub!(regexp_for(key), value.to_s)
+  module Filler
+    class << self
+      def run(ast, variables)
+        return "" unless ast
+        if ast.class == Chimparse::Parser::Value
+          ast.value + run(ast.next, variables)
+        elsif ast.class == Chimparse::Parser::Variable
+          variables[ast.name] + run(ast.next, variables)
+        elsif ast.class == Chimparse::Parser::Conditional
+          if variables[ast.variable]
+            run(ast.left, variables)
+          else
+            run(ast.right, variables)
+          end
+        end
       end
-      html_vars.each do |key, value|
-        @content.gsub!(regexp_for_html(key), value.to_s)
+    end
+  end
+
+  module Parser
+    class Value < Struct.new(:value, :next)
+    end
+    class Variable < Struct.new(:name, :next)
+    end
+    class Conditional < Struct.new(:variable, :left, :right)
+    end
+
+    class << self
+      def run(string)
+        scanner = StringScanner.new(string)
+        parse(scanner)
       end
-      conditionals
-    end
 
-    def conditionals
-      regexp = /\*\|IF:(\w+)\|\*(.*?)\*\|END:IF\|\*/m
-      matches = regexp.match(content)
-      return content unless matches
-      array = else_if_branches(matches[0])
-      other_value = else_branch(matches[0]) if has_else?(matches[0])
-      @content = content.sub(regexp, first_true(Hash[*array]) || other_value.to_s)
-      conditionals
-    end
-
-    def has_else?(string)
-      string.match(/\*\|ELSE:\|\*/m)
-    end
-
-    def else_if_branches(string)
-      end_array = has_else?(string) ? -3 : -1
-      string.split(/\*\|IF:(.*?)\|\*|\*\|ELSEIF:(.*?)\|\*|\*\|(ELSE:|END:IF)\|\*/m)[1...end_array]
-    end
-
-    def else_branch(string)
-      string.split(/\*\|ELSE:\|\*(.*?)\*\|END:IF\|\*/m)[1]
-    end
-
-    def first_true(hash)
-      pair = hash.find { |k, _| value_for(k) }
-      pair && pair[1]
-    end
-
-    def value_for(k)
-      text_vars[k] || text_vars[k.to_sym] || html_vars[k] || html_vars[k.to_sym]
-    end
-
-    def regexp_for(key)
-      /\*\|#{key}\|\*/
-    end
-
-    def regexp_for_html(key)
-      /\*\|HTML:#{key}\|\*/
+      def parse(scanner)
+        if scanner.scan(/\*\|(\w+)\|\*/)
+          Variable.new(scanner[1].to_sym, parse(scanner))
+        elsif scanner.scan(/\*\|(\w+):(\w+)?\|\*/)
+          case scanner[1].downcase.to_sym
+          when :if, :elseif
+            Conditional.new(scanner[2].to_sym, run(scanner.scan_until(/(?=\*\|(elseif:\w+|else:|end:if)\|\*)/i)), parse(scanner))
+          when :else
+            parse(scanner)
+          end
+        elsif value = scanner.scan(/[^\*]+/)
+          Value.new(value, parse(scanner)) if value
+        end
+      end
     end
   end
 end
